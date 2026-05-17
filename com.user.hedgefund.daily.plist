@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.hedgefund.daily</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/env</string>
+        <string>python3</string>
+        <string>/Users/smita/Documents/Claude/Projects/phf/ls_equity_fund/run_scoring.py</string>
+        <string>--no-filings</string>
+        <string>--no-13f</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/smita/Documents/Claude/Projects/phf/ls_equity_fund</string>
+
+    <!-- Weekdays at 17:15 local time -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>17</integer>
+        <key>Minute</key>
+        <integer>15</integer>
+        <key>Weekday</key>
+        <integer>1</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/smita/Documents/Claude/Projects/phf/ls_equity_fund/output/launchd.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/smita/Documents/Claude/Projects/phf/ls_equity_fund/output/launchd_err.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

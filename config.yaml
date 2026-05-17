@@ -1,0 +1,181 @@
+# Meridian Capital Partners — System Configuration
+
+# --- UNIVERSE ---
+universe:
+  refresh_days: 7
+  benchmark_tickers:
+    - SPY
+    - QQQ
+    - IWM
+    - DIA
+    - XLK
+    - XLF
+    - XLV
+    - XLE
+    - XLI
+    - XLC
+    - XLY
+    - XLP
+    - XLB
+    - XLRE
+    - XLU
+    - "^VIX"
+    - TLT
+    - HYG
+
+# --- MARKET DATA ---
+market_data:
+  lookback_years: 3
+  incremental: true
+
+# --- SCORING ENGINE ---
+factors:
+  weights:
+    momentum: 0.20
+    quality: 0.20
+    value: 0.15
+    estimate_revisions: 0.15
+    insider_activity: 0.10
+    growth: 0.10
+    short_interest: 0.05
+    institutional_flow: 0.05
+
+  regime_conditional_weights: true
+  regimes:
+    low_vol:            # VIX < 15
+      momentum: 0.28
+      quality: 0.20
+      value: 0.10
+      estimate_revisions: 0.15
+      insider_activity: 0.10
+      growth: 0.10
+      short_interest: 0.05
+      institutional_flow: 0.02
+    normal:             # VIX 15-25 (same as default)
+      momentum: 0.20
+      quality: 0.20
+      value: 0.15
+      estimate_revisions: 0.15
+      insider_activity: 0.10
+      growth: 0.10
+      short_interest: 0.05
+      institutional_flow: 0.05
+    high_vol:           # VIX > 25
+      momentum: 0.10
+      quality: 0.28
+      value: 0.22
+      estimate_revisions: 0.15
+      insider_activity: 0.10
+      growth: 0.07
+      short_interest: 0.05
+      institutional_flow: 0.03
+
+# --- PORTFOLIO CONSTRUCTION ---
+portfolio:
+  num_longs: 20
+  num_shorts: 20
+  max_position_pct: 0.05
+  min_position_pct: 0.005
+  max_sector_pct: 0.25
+  target_gross: 1.50
+  target_long_gross: 0.80
+  target_short_gross: 0.70
+  net_min: 0.00
+  net_max: 0.10
+  max_net_beta: 0.15
+  turnover_budget: 0.30
+  mvo_risk_aversion: 1.0
+  optimize_method: "conviction"   # "mvo" or "conviction"
+
+  conviction_tilt:
+    top5pct_multiplier: 1.5
+    top10pct_multiplier: 1.25
+
+  liquidity:
+    max_adv_pct: 0.05             # no position > 5% of 20-day ADV
+    earnings_size_reduction: 0.5  # halve size if earnings in 5 days
+
+  transaction_costs:
+    commission_bps: 0
+    spread_coef: 0.05
+    impact_coef: 0.10
+
+# --- RISK MANAGEMENT ---
+risk:
+  factor_risk_lookback_days: 120
+  correlation_lookback_days: 60
+
+  pre_trade_limits:
+    max_position_aum_pct: 0.05
+    max_sector_pct: 0.25
+    max_gross_exposure: 1.65
+    net_min: -0.10
+    net_max: 0.15
+    max_net_beta: 0.20
+    max_pairwise_correlation: 0.80
+    max_adv_pct: 0.05
+    earnings_blackout_days: 5
+    earnings_size_cut: 0.50
+
+  circuit_breakers:
+    daily_loss_size_down: 0.015      # 1.5% daily loss -> SIZE_DOWN 30%
+    daily_loss_close_all: 0.025      # 2.5% daily loss -> CLOSE_ALL_TODAY
+    weekly_loss_size_down: 0.04      # 4% weekly loss -> SIZE_DOWN 30%
+    drawdown_kill_switch: 0.08       # 8% drawdown -> KILL_SWITCH
+    size_down_reduction: 0.30
+    single_position_force_close: 0.03
+
+  tail_risk:
+    vix_reduce_20_threshold: 25
+    vix_reduce_50_threshold: 35
+    credit_spread_zscore_threshold: 1.0
+
+  crowding_correlation_flag: 0.4
+
+  correlation_alerts:
+    within_book_avg_threshold: 0.60
+
+  factor_monitor:
+    zscore_alert_threshold: 1.5
+
+# --- CLAUDE AI ANALYSIS ---
+analysis:
+  model: "claude-sonnet-4-6"
+  cost_ceiling_usd: 25.0
+  cache_ttl_days: 30
+  transcript_max_chars: 120000
+  risk_factors_max_chars: 80000
+  combined_score_quant_weight: 0.60
+  combined_score_ai_weight: 0.40
+
+# --- EXECUTION ---
+execution:
+  mode: "paper"           # "paper" or "live" (live requires explicit confirmation)
+  limit_slippage_bps: 10  # limit price offset: close * (1 +/- 0.001)
+  chunk_adv_threshold: 0.02
+  order_timeout_seconds: 120
+  poll_interval_seconds: 5
+  max_retries: 3
+
+# --- REPORTING ---
+reporting:
+  weekly_commentary_day: 4   # 0=Mon … 4=Fri
+  tax_short_term_rate: 0.37
+  tax_long_term_rate: 0.20
+
+# --- FUND INFO (for LP letters / tear sheets) ---
+fund:
+  name: "Meridian Capital Partners"
+  domicile: "Delaware"
+  inception_date: "2024-01-01"
+  aum_usd: 100000000         # $100M placeholder
+  currency: "USD"
+
+# --- DATABASE ---
+database:
+  path: "cache/meridian.db"
+
+# --- LOGGING ---
+logging:
+  log_file: "output/run.log"
+  level: "INFO"

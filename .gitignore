@@ -1,0 +1,29 @@
+# Secrets
+.env
+.env.local
+
+# Runtime data (stays on Railway volume)
+cache/
+output/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+
+# Next.js
+dashboard/node_modules/
+dashboard/.next/
+
+# macOS
+.DS_Store
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
+
+# Parquet caches
+*.parquet

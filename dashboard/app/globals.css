@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0b0e17;
+  --card-from: #131827;
+  --card-to: #1a2035;
+  --accent: #6366f1;
+  --long: #10b981;
+  --short: #f43f5e;
+  --text: #e2e8f0;
+  --muted: #64748b;
+  --border: #1e2a45;
+  --background: #0b0e17;
+  --foreground: #e2e8f0;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Inter", system-ui, sans-serif;
+  margin: 0;
+}
+
+.card {
+  background: linear-gradient(135deg, var(--card-from), var(--card-to));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.badge-long { background: rgba(16,185,129,.15); color: var(--long); border: 1px solid var(--long); border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+.badge-short { background: rgba(244,63,94,.15); color: var(--short); border: 1px solid var(--short); border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+.badge-neutral { background: rgba(100,116,139,.15); color: var(--muted); border: 1px solid var(--muted); border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+
+.metric-value { font-size: 28px; font-weight: 700; }
+.metric-label { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }

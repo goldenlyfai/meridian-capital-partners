@@ -1,0 +1,152 @@
+"use client";
+import { useEffect, useState, useRef } from "react";
+import MetricCard from "@/components/MetricCard";
+import { api } from "@/lib/api";
+
+interface ChatMsg { role: "user" | "jarvis"; text: string }
+
+function VixBadge({ vix }: { vix: number }) {
+  const regime = vix < 15 ? "LOW VOL" : vix > 25 ? "HIGH VOL" : "NORMAL";
+  const color = vix < 15 ? "#10b981" : vix > 25 ? "#f43f5e" : "#6366f1";
+  return (
+    <span style={{ background: `${color}22`, color, border: `1px solid ${color}`,
+      borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 700 }}>
+      VIX {vix.toFixed(1)} · {regime}
+    </span>
+  );
+}
+
+export default function PortfolioPage() {
+  const [stats, setStats] = useState<any>(null);
+  const [positions, setPositions] = useState<any>(null);
+  const [vixData, setVixData] = useState<any>(null);
+  const [chat, setChat] = useState<ChatMsg[]>([]);
+  const [input, setInput] = useState("");
+  const [thinking, setThinking] = useState(false);
+  const chatRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    api.universe.stats().then(setStats).catch(() => {});
+    api.portfolio.positions().then(setPositions).catch(() => {});
+    api.research.vix().then(setVixData).catch(() => {});
+    const interval = setInterval(() => {
+      const h = new Date().getHours();
+      if (h >= 9 && h < 16) {
+        api.portfolio.positions().then(setPositions).catch(() => {});
+        api.research.vix().then(setVixData).catch(() => {});
+      }
+    }, 300_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function sendMessage() {
+    if (!input.trim()) return;
+    const msg = input.trim();
+    setInput("");
+    setChat((c) => [...c, { role: "user", text: msg }]);
+    setThinking(true);
+    try {
+      const res = await api.jarvis.chat(msg, chat.slice(-6).map(m => ({ role: m.role, content: m.text })));
+      setChat((c) => [...c, { role: "jarvis", text: res.response }]);
+    } catch {
+      setChat((c) => [...c, { role: "jarvis", text: "System error — please try again." }]);
+    } finally {
+      setThinking(false);
+    }
+    setTimeout(() => { if (chatRef.current) chatRef.current.scrollTop = 99999; }, 100);
+  }
+
+  const summary = positions?.summary ?? {};
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, minHeight: "80vh" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        <div>
+          <div style={{ fontSize: 82, fontWeight: 900, letterSpacing: "-3px",
+            background: "linear-gradient(135deg, #6366f1, #a78bfa)", WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent", lineHeight: 1 }}>JARVIS</div>
+          <div style={{ fontSize: 11, letterSpacing: "0.2em", color: "#64748b",
+            textTransform: "uppercase", marginTop: 4 }}>LONG / SHORT HEDGE FUND ANALYST</div>
+        </div>
+
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          {vixData && <VixBadge vix={vixData.vix} />}
+          <span style={{ fontSize: 11, color: "#64748b" }}>Data: yfinance + SEC EDGAR</span>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+          <MetricCard label="Universe" value={stats?.universe_size ?? "—"} />
+          <MetricCard label="Positions" value={summary.total_positions ?? "—"} />
+          <MetricCard label="Long / Short" value={`${summary.long_count ?? 0} / ${summary.short_count ?? 0}`} />
+          <MetricCard label="VIX" value={vixData?.vix?.toFixed(1) ?? "—"} color={vixData?.vix > 25 ? "#f43f5e" : "#10b981"} />
+          <MetricCard label="Earnings 7d" value={stats?.earnings_next_7d ?? "—"} />
+          <MetricCard label="CEO Buys 30d" value={stats?.ceo_buys_30d ?? "—"} color="#10b981" />
+          <MetricCard label="Cluster Buys" value={stats?.cluster_buys ?? "—"} />
+          <MetricCard label="Regime" value={vixData?.regime?.replace("_", " ")?.toUpperCase() ?? "—"} />
+          <MetricCard label="Unrlzd P&L" value={summary.total_unrealized_pnl != null ? `$${(summary.total_unrealized_pnl/1000).toFixed(0)}K` : "—"} color={summary.total_unrealized_pnl >= 0 ? "#10b981" : "#f43f5e"} />
+        </div>
+
+        <div className="card" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#6366f1", letterSpacing: "0.1em" }}>ASK JARVIS</div>
+          <div ref={chatRef} style={{ flex: 1, overflowY: "auto", maxHeight: 260, display: "flex", flexDirection: "column", gap: 10 }}>
+            {chat.length === 0 && <div style={{ color: "#475569", fontSize: 13, fontStyle: "italic" }}>Ask about the portfolio, risk, or market conditions…</div>}
+            {chat.map((m, i) => (
+              <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start",
+                background: m.role === "user" ? "#1e2a45" : "#131827", borderRadius: 8,
+                padding: "10px 14px", maxWidth: "90%", fontSize: 13, lineHeight: 1.6,
+                border: m.role === "jarvis" ? "1px solid #6366f133" : "1px solid #1e2a45" }}>
+                {m.role === "jarvis" && <div style={{ color: "#6366f1", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", marginBottom: 4 }}>JARVIS</div>}
+                <span style={{ whiteSpace: "pre-wrap" }}>{m.text}</span>
+              </div>
+            ))}
+            {thinking && <div style={{ color: "#6366f1", fontSize: 13, fontStyle: "italic" }}>JARVIS thinking…</div>}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input value={input} onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
+              placeholder="Ask JARVIS anything…"
+              style={{ flex: 1, background: "#0b0e17", border: "1px solid #1e2a45", borderRadius: 8,
+                padding: "10px 14px", color: "#e2e8f0", fontSize: 13, outline: "none" }} />
+            <button onClick={sendMessage}
+              style={{ background: "linear-gradient(135deg, #4f46e5, #6366f1)", border: "none",
+                borderRadius: 8, padding: "10px 18px", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>
+              Send
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{ overflow: "auto" }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.08em", marginBottom: 16 }}>CURRENT POSITIONS</div>
+        {!positions?.positions?.length ? (
+          <div style={{ color: "#475569", fontSize: 13 }}>No positions. Run portfolio construction first.</div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid #1e2a45" }}>
+                {["Ticker", "Signal", "Shares", "Entry", "Current", "P&L", "Sector"].map(h => (
+                  <th key={h} style={{ color: "#64748b", fontWeight: 600, padding: "6px 10px", textAlign: "left", fontSize: 11 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {positions.positions.map((p: any) => (
+                <tr key={p.ticker} style={{ borderBottom: "1px solid #1e2a4522" }}>
+                  <td style={{ padding: "8px 10px", fontWeight: 700 }}>{p.ticker}</td>
+                  <td style={{ padding: "8px 10px" }}><span className={p.signal === "LONG" ? "badge-long" : "badge-short"}>{p.signal}</span></td>
+                  <td style={{ padding: "8px 10px", fontFamily: "monospace" }}>{Number(p.shares).toLocaleString()}</td>
+                  <td style={{ padding: "8px 10px", fontFamily: "monospace" }}>${Number(p.entry_price).toFixed(2)}</td>
+                  <td style={{ padding: "8px 10px", fontFamily: "monospace" }}>${Number(p.current_price ?? p.entry_price).toFixed(2)}</td>
+                  <td style={{ padding: "8px 10px", fontFamily: "monospace", color: p.unrealized_pnl >= 0 ? "#10b981" : "#f43f5e" }}>
+                    {p.unrealized_pnl >= 0 ? "+" : ""}${Number(p.unrealized_pnl).toFixed(0)}
+                  </td>
+                  <td style={{ padding: "8px 10px", color: "#64748b", fontSize: 11 }}>{p.sector}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
