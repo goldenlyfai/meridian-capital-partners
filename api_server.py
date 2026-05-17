@@ -299,5 +299,77 @@ def get_universe_stats():
     }
 
 
+# ─── ADMIN / PIPELINE TRIGGERS ───────────────────────────────────────────────
+
+import subprocess as _subprocess
+import threading as _threading
+
+_pipeline_status = {"running": False, "last_run": None, "last_result": None, "log": ""}
+
+
+def _run_pipeline_bg(no_filings: bool, no_13f: bool):
+    global _pipeline_status
+    _pipeline_status["running"] = True
+    _pipeline_status["log"] = ""
+    try:
+        args = ["python", "run_data.py"]
+        if no_filings:
+            args.append("--no-filings")
+        if no_13f:
+            args.append("--no-13f")
+        result = _subprocess.run(
+            args, capture_output=True, text=True, timeout=3600
+        )
+        log = result.stdout + result.stderr
+        _pipeline_status["log"] = log[-5000:]  # keep last 5000 chars
+        _pipeline_status["last_result"] = "ok" if result.returncode == 0 else "error"
+
+        # Auto-run scoring after data
+        _subprocess.run(["python", "run_scoring.py"], capture_output=True, timeout=600)
+
+    except Exception as e:
+        _pipeline_status["last_result"] = f"error: {e}"
+    finally:
+        from datetime import datetime as _dt
+        _pipeline_status["running"] = False
+        _pipeline_status["last_run"] = _dt.utcnow().isoformat()
+
+
+@app.post("/api/admin/run-data")
+def trigger_data_refresh(no_filings: bool = True, no_13f: bool = True):
+    """Trigger a full data + scoring pipeline run in the background."""
+    if _pipeline_status["running"]:
+        return {"status": "already_running", "message": "Pipeline is already running. Check /api/admin/status."}
+    t = _threading.Thread(target=_run_pipeline_bg, args=(no_filings, no_13f), daemon=True)
+    t.start()
+    return {"status": "started", "message": "Data pipeline started in background. Check /api/admin/status for progress."}
+
+
+@app.get("/api/admin/status")
+def pipeline_status():
+    """Check whether the data pipeline is running."""
+    conn_ok = False
+    universe_size = 0
+    try:
+        from data.db import get_conn
+        conn = get_conn()
+        universe_size = conn.execute("SELECT COUNT(*) FROM universe").fetchone()[0]
+        prices = conn.execute("SELECT COUNT(*) FROM daily_prices").fetchone()[0]
+        conn.close()
+        conn_ok = True
+    except Exception:
+        prices = 0
+
+    return {
+        "pipeline_running": _pipeline_status["running"],
+        "last_run": _pipeline_status["last_run"],
+        "last_result": _pipeline_status["last_result"],
+        "db_ok": conn_ok,
+        "universe_size": universe_size,
+        "price_bars": prices,
+        "log_tail": _pipeline_status["log"][-500:] if _pipeline_status["log"] else "",
+    }
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)

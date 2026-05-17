@@ -22,5 +22,7 @@ RUN mkdir -p /data/output /data/cache /data/output/reports
 
 EXPOSE 8000
 
-# Init DB schema then start FastAPI
-CMD ["sh", "-c", "python -c 'from data.db import init_db; init_db()' && uvicorn api_server:app --host 0.0.0.0 --port 8000"]
+COPY docker_start.sh /docker_start.sh
+RUN chmod +x /docker_start.sh
+
+CMD ["/docker_start.sh"]

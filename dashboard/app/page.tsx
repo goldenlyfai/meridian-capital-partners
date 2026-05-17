@@ -16,6 +16,76 @@ function VixBadge({ vix }: { vix: number }) {
   );
 }
 
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+async function adminPost(path: string) {
+  const res = await fetch(`${BASE}${path}`, { method: "POST" });
+  return res.json();
+}
+async function adminGet(path: string) {
+  const res = await fetch(`${BASE}${path}`);
+  return res.json();
+}
+
+function DataStatusBanner() {
+  const [status, setStatus] = useState<any>(null);
+  const [triggering, setTriggering] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    adminGet("/api/admin/status").then(setStatus).catch(() => {});
+    const t = setInterval(() => adminGet("/api/admin/status").then(setStatus).catch(() => {}), 8000);
+    return () => clearInterval(t);
+  }, []);
+
+  async function runRefresh() {
+    setTriggering(true);
+    setMsg("");
+    try {
+      const r = await adminPost("/api/admin/run-data?no_filings=true&no_13f=true");
+      setMsg(r.message ?? "Pipeline started.");
+    } catch {
+      setMsg("Could not reach backend.");
+    } finally {
+      setTriggering(false);
+    }
+  }
+
+  if (!status) return null;
+
+  const isEmpty = (status.universe_size ?? 0) === 0;
+  const isRunning = status.pipeline_running;
+
+  return (
+    <div style={{
+      background: isEmpty ? "#f43f5e18" : isRunning ? "#6366f118" : "#10b98118",
+      border: `1px solid ${isEmpty ? "#f43f5e" : isRunning ? "#6366f1" : "#10b981"}`,
+      borderRadius: 10, padding: "12px 18px", marginBottom: 8,
+      display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
+    }}>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: isEmpty ? "#f43f5e" : isRunning ? "#a78bfa" : "#10b981" }}>
+          {isEmpty ? "⚠ Database empty — no data yet" : isRunning ? "⏳ Data pipeline running…" : `✓ ${status.universe_size} tickers · ${(status.price_bars ?? 0).toLocaleString()} price bars`}
+        </div>
+        {msg && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>{msg}</div>}
+        {isRunning && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>Fetching S&P 500 data in background (~20 min first time). Refresh this page when done.</div>}
+      </div>
+      <button
+        onClick={runRefresh}
+        disabled={triggering || isRunning}
+        style={{
+          background: isRunning ? "#1e2a45" : "linear-gradient(135deg, #4f46e5, #6366f1)",
+          border: "none", borderRadius: 8, padding: "8px 16px",
+          color: isRunning ? "#64748b" : "#fff", fontWeight: 600,
+          cursor: isRunning ? "not-allowed" : "pointer", fontSize: 12, whiteSpace: "nowrap",
+        }}
+      >
+        {triggering ? "Starting…" : isRunning ? "Running…" : isEmpty ? "Fetch Data Now" : "Refresh Data"}
+      </button>
+    </div>
+  );
+}
+
 export default function PortfolioPage() {
   const [stats, setStats] = useState<any>(null);
   const [positions, setPositions] = useState<any>(null);
@@ -59,6 +129,8 @@ export default function PortfolioPage() {
   const summary = positions?.summary ?? {};
 
   return (
+    <div>
+      <DataStatusBanner />
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, minHeight: "80vh" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
         <div>
@@ -147,6 +219,7 @@ export default function PortfolioPage() {
           </table>
         )}
       </div>
+    </div>
     </div>
   );
 }
