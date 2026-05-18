@@ -1,8 +1,14 @@
 {
   "framework": "nextjs",
-  "buildCommand": "npm run build",
-  "outputDirectory": ".next",
-  "env": {
-    "NEXT_PUBLIC_API_URL": "@meridian-api-url"
-  }
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60
+    },
+    "api/cron/refresh.py": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    { "path": "/api/cron/refresh", "schedule": "0 22 * * 1-5" }
+  ]
 }

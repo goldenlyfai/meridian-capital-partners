@@ -6,7 +6,8 @@ Called automatically by Vercel; also callable manually from the dashboard.
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+# dashboard/ is the Vercel root — go up 2 levels: cron/ → api/ → dashboard/
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from http.server import BaseHTTPRequestHandler
 import json
