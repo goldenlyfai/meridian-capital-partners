@@ -1,4 +1,9 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// In production (Vercel) both frontend and API are on the same domain → relative paths.
+// In local dev, point to the local FastAPI server via NEXT_PUBLIC_API_URL.
+const BASE =
+  typeof window !== "undefined"
+    ? (process.env.NEXT_PUBLIC_API_URL ?? "")      // browser: relative = same domain
+    : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"); // SSR fallback
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { cache: "no-store" });

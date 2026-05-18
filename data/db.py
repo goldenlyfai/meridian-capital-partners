@@ -1,30 +1,194 @@
-"""Shared SQLite connection and table initialisation."""
-import sqlite3
+"""
+Unified database connection — SQLite for local dev, Neon Postgres on Vercel.
+
+Detection:
+  DATABASE_URL set  → Postgres (Neon)
+  MERIDIAN_DB_PATH  → custom SQLite path (Railway volume)
+  default           → cache/meridian.db (local)
+
+SQL compatibility:
+  - Translates ? → %s for Postgres
+  - INSERT OR REPLACE → INSERT ... ON CONFLICT (...) DO UPDATE SET ...
+  - INSERT OR IGNORE  → INSERT ... ON CONFLICT DO NOTHING
+  - CREATE TABLE AUTOINCREMENT → SERIAL PRIMARY KEY
+"""
 import os
-import yaml
+import re
+import sqlite3
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 _cfg = yaml.safe_load((ROOT / "config.yaml").read_text())
 
-# Allow Railway volume override via env var
+DATABASE_URL = os.getenv("DATABASE_URL")
 _db_env = os.getenv("MERIDIAN_DB_PATH")
 DB_PATH = Path(_db_env) if _db_env else ROOT / _cfg["database"]["path"]
+USE_POSTGRES = bool(DATABASE_URL)
+
+# Primary key columns per table — needed to generate ON CONFLICT targets
+_TABLE_PK: dict[str, list[str]] = {
+    "universe":               ["ticker"],
+    "daily_prices":           ["ticker", "date"],
+    "fundamentals":           ["ticker", "period", "period_type"],
+    "institutional_holdings": ["fund_name", "ticker", "report_date"],
+    "short_interest":         ["ticker", "date"],
+    "analyst_estimates":      ["ticker", "date"],
+    "earnings_calendar":      ["ticker", "earnings_date"],
+    "earnings_transcripts":   ["ticker", "quarter"],
+    "portfolio_positions":    ["ticker"],
+    "position_approvals":     ["ticker"],
+    "analysis_results":       ["analyzer", "ticker", "artifact_id"],
+    "short_availability":     ["ticker"],
+    "veto_log":               [],   # append-only
+    "fills":                  [],   # append-only
+    "portfolio_history":      [],   # append-only
+}
+
+_RE_REPLACE = re.compile(
+    r"INSERT\s+OR\s+REPLACE\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)",
+    re.IGNORECASE | re.DOTALL,
+)
+_RE_IGNORE = re.compile(
+    r"INSERT\s+OR\s+IGNORE\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)",
+    re.IGNORECASE | re.DOTALL,
+)
+_RE_AUTOINCREMENT = re.compile(r"INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT", re.IGNORECASE)
+_RE_INTEGER = re.compile(r"\bINTEGER\b(?!\s+PRIMARY)", re.IGNORECASE)
 
 
-def get_conn() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    return conn
+def _pg_upsert(m: re.Match) -> str:
+    table = m.group(1)
+    cols_raw = m.group(2)
+    vals = m.group(3)
+    cols = [c.strip() for c in cols_raw.split(",")]
+    pk = _TABLE_PK.get(table, [cols[0]])
+    if not pk:
+        return f"INSERT INTO {table} ({cols_raw}) VALUES ({vals})"
+    non_pk = [c for c in cols if c not in pk] or [cols[-1]]
+    update = ", ".join(f"{c} = EXCLUDED.{c}" for c in non_pk)
+    return (
+        f"INSERT INTO {table} ({cols_raw}) VALUES ({vals})"
+        f" ON CONFLICT ({', '.join(pk)}) DO UPDATE SET {update}"
+    )
+
+
+def _pg_ignore(m: re.Match) -> str:
+    table, cols_raw, vals = m.group(1), m.group(2), m.group(3)
+    return f"INSERT INTO {table} ({cols_raw}) VALUES ({vals}) ON CONFLICT DO NOTHING"
+
+
+def _adapt(sql: str) -> str:
+    """Translate SQLite SQL to Postgres-compatible SQL."""
+    sql = sql.replace("?", "%s")
+    sql = _RE_REPLACE.sub(_pg_upsert, sql)
+    sql = _RE_IGNORE.sub(_pg_ignore, sql)
+    return sql
+
+
+def _adapt_create(sql: str) -> str:
+    sql = _RE_AUTOINCREMENT.sub("SERIAL PRIMARY KEY", sql)
+    sql = _RE_INTEGER.sub("BIGINT", sql)
+    return sql
+
+
+class _Cursor:
+    """Wraps psycopg2 cursor to expose fetchone/fetchall like sqlite3."""
+    def __init__(self, cur):
+        self._cur = cur
+
+    def fetchone(self):
+        return self._cur.fetchone()
+
+    def fetchall(self):
+        return self._cur.fetchall()
+
+    def __iter__(self):
+        return iter(self._cur.fetchall())
+
+
+class Connection:
+    """Unified SQLite / Postgres connection with automatic SQL translation."""
+
+    def __init__(self):
+        if USE_POSTGRES:
+            import psycopg2
+            self._conn = psycopg2.connect(DATABASE_URL)
+            self._pg = True
+        else:
+            DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+            self._conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+            self._pg = False
+
+    # ── core execute ─────────────────────────────────────────────────────────
+
+    def execute(self, sql: str, params=()):
+        if self._pg:
+            cur = self._conn.cursor()
+            cur.execute(_adapt(sql), params or ())
+            return _Cursor(cur)
+        return self._conn.execute(sql, params)
+
+    def executemany(self, sql: str, params_list):
+        if self._pg:
+            cur = self._conn.cursor()
+            cur.executemany(_adapt(sql), params_list)
+            return _Cursor(cur)
+        return self._conn.executemany(sql, params_list)
+
+    def executescript(self, script: str):
+        """Run a multi-statement DDL script."""
+        if self._pg:
+            cur = self._conn.cursor()
+            for raw in script.split(";"):
+                stmt = raw.strip()
+                if not stmt:
+                    continue
+                stmt = _adapt_create(stmt)
+                stmt = _adapt(stmt)
+                try:
+                    cur.execute(stmt)
+                except Exception:
+                    pass  # table / index already exists
+        else:
+            self._conn.executescript(script)
+
+    # ── pandas compatibility ──────────────────────────────────────────────────
+
+    def cursor(self):
+        """Allow pandas.read_sql(sql, conn) to work directly."""
+        return self._conn.cursor()
+
+    # ── transaction ──────────────────────────────────────────────────────────
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+    # ── delegate everything else to the underlying connection ────────────────
+
+    def __getattr__(self, name: str):
+        return getattr(self._conn, name)
+
+
+def get_conn() -> Connection:
+    return Connection()
 
 
 def init_db():
     conn = get_conn()
-    c = conn.cursor()
-
-    c.executescript("""
+    conn.executescript("""
     CREATE TABLE IF NOT EXISTS universe (
         ticker TEXT PRIMARY KEY,
         company_name TEXT,
@@ -131,7 +295,48 @@ def init_db():
         fetched_at TEXT,
         PRIMARY KEY (ticker, quarter)
     );
-    """)
 
+    CREATE TABLE IF NOT EXISTS analysis_results (
+        analyzer TEXT NOT NULL,
+        ticker TEXT NOT NULL,
+        artifact_id TEXT NOT NULL,
+        result_json TEXT,
+        created_at TEXT,
+        PRIMARY KEY (analyzer, ticker, artifact_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS portfolio_positions (
+        ticker TEXT PRIMARY KEY,
+        shares REAL,
+        entry_price REAL,
+        entry_date TEXT,
+        current_price REAL,
+        unrealized_pnl REAL,
+        sector TEXT,
+        signal TEXT,
+        composite_score REAL,
+        updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS portfolio_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT,
+        ticker TEXT,
+        action TEXT,
+        shares REAL,
+        price REAL,
+        pnl REAL,
+        reason TEXT,
+        logged_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS position_approvals (
+        ticker TEXT PRIMARY KEY,
+        action TEXT,
+        status TEXT,
+        reviewed_at TEXT,
+        reviewer TEXT
+    );
+    """)
     conn.commit()
     conn.close()
