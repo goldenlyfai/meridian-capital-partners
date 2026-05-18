@@ -3,7 +3,6 @@ import logging
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import minimize
 
 from data.db import get_conn
 from data.market_data import get_returns
@@ -89,6 +88,12 @@ def mvo_optimize(
         w0 = np.ones(n) * (target / n)
 
         try:
+            try:
+                from scipy.optimize import minimize
+            except ImportError:
+                logger.warning("scipy not available — MVO falling back to conviction optimizer")
+                return {}
+
             result = minimize(
                 neg_utility,
                 w0,

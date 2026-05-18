@@ -1,0 +1,19 @@
+# Vercel Python Function — minimal runtime requirements.
+# Heavy packages (scipy, scikit-learn, pyarrow, alpaca-py) are excluded.
+# They are only needed for local pipeline scripts (run_data.py, run_scoring.py).
+
+fastapi==0.111.0
+mangum==0.17.0
+pyyaml==6.0.1
+python-dotenv==1.0.0
+anthropic==0.40.0
+pandas==2.1.4
+numpy==1.26.4
+requests==2.31.0
+yfinance==0.2.40
+beautifulsoup4==4.12.3
+lxml==5.1.0
+psycopg2-binary==2.9.9
+python-dateutil==2.9.0
+pytz==2024.1
+httpx==0.27.0

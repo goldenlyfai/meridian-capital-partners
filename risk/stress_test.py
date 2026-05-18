@@ -37,7 +37,10 @@ def _get_historical_returns(tickers: list[str], start: str, end: str) -> pd.Data
 
     if cache_path.exists():
         try:
-            return pd.read_parquet(cache_path)
+            try:
+                return pd.read_parquet(cache_path)
+            except ImportError:
+                pass  # pyarrow not available on Vercel, skip cache
         except Exception:
             pass
 
@@ -56,7 +59,10 @@ def _get_historical_returns(tickers: list[str], start: str, end: str) -> pd.Data
             adj_close = raw[["Close"]]
 
         rets = adj_close.pct_change().dropna(how="all")
-        rets.to_parquet(cache_path)
+        try:
+            rets.to_parquet(cache_path)  # cache for local dev; skipped if pyarrow absent
+        except Exception:
+            pass
         return rets
     except Exception as e:
         logger.warning("Stress test historical fetch: %s", e)

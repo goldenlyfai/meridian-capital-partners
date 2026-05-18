@@ -3,7 +3,6 @@ import logging
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LinearRegression
 
 from data.db import get_conn
 from data.market_data import get_returns
@@ -75,6 +74,18 @@ def build_factor_risk_model(
         y = r.loc[common].values
 
         try:
+            try:
+                from sklearn.linear_model import LinearRegression
+            except ImportError:
+                # Fallback: simple OLS via numpy when sklearn not available
+                class LinearRegression:
+                    def fit(self, X, y):
+                        self.coef_, _, _, _ = np.linalg.lstsq(
+                            np.column_stack([X, np.ones(len(X))]), y, rcond=None
+                        )
+                        self.coef_ = self.coef_[:-1]
+                        return self
+
             reg = LinearRegression(fit_intercept=True)
             reg.fit(X, y)
             factor_ret = dict(zip(factor_cols, reg.coef_))
