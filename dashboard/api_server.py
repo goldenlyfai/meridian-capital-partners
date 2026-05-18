@@ -316,50 +316,88 @@ def get_universe_stats():
 
 # ─── ADMIN / PIPELINE TRIGGERS ───────────────────────────────────────────────
 
-import subprocess as _subprocess
 import threading as _threading
 
 _pipeline_status = {"running": False, "last_run": None, "last_result": None, "log": ""}
 
 
-def _stream_process(args: list, timeout: int) -> tuple[int, str]:
-    """Run subprocess and stream stdout+stderr into _pipeline_status['log']."""
-    import os as _os
-    proc = _subprocess.Popen(
-        args, stdout=_subprocess.PIPE, stderr=_subprocess.STDOUT,
-        text=True, cwd=str(ROOT),
-        env={**_os.environ, "PYTHONUNBUFFERED": "1"},
-    )
-    log = ""
-    try:
-        for line in proc.stdout:
-            log += line
-            _pipeline_status["log"] = log[-8000:]  # keep last 8KB
-        proc.wait(timeout=timeout)
-    except _subprocess.TimeoutExpired:
-        proc.kill()
-        return -1, log
-    return proc.returncode, log
+def _log(msg: str):
+    """Append a line to the live pipeline log."""
+    _pipeline_status["log"] = (_pipeline_status["log"] + msg + "\n")[-8000:]
 
 
 def _run_pipeline_bg(no_filings: bool, no_13f: bool):
+    """Run the full data + scoring pipeline directly in-process (no subprocess)."""
     global _pipeline_status
     _pipeline_status["running"] = True
     _pipeline_status["log"] = ""
     try:
-        import os as _os
-        python = _os.environ.get("PYTHON_EXEC", "python3")
-        args = [python, str(ROOT / "run_data.py")]
-        if no_filings:
-            args.append("--no-filings")
-        if no_13f:
-            args.append("--no-13f")
+        from data.db import init_db, get_conn
+        from data.universe import refresh_universe, get_sp500_tickers, get_all_tickers
+        from data.market_data import refresh_prices
+        from data.fundamentals import refresh_fundamentals
+        from data.short_interest import refresh_short_interest
+        from data.estimates import refresh_estimates
+        from data.earnings_calendar import refresh_earnings_calendar
+        from data.transcripts import refresh_transcripts
 
-        rc, _ = _stream_process(args, timeout=3600)
-        _pipeline_status["last_result"] = "ok" if rc == 0 else f"error (exit {rc})"
+        _log("=== Meridian Data Refresh ===")
 
-        # Auto-run scoring after data
-        _stream_process([python, str(ROOT / "run_scoring.py")], timeout=600)
+        init_db()
+        _log("[1/7] Refreshing universe…")
+        n = refresh_universe(refresh_days=7)
+        _log(f"      {n} stocks in universe")
+
+        conn = get_conn()
+        tickers = get_sp500_tickers(conn)
+        all_tickers = get_all_tickers(conn)
+        conn.close()
+        _log(f"[2/7] Fetching prices for {len(all_tickers)} tickers…")
+        ps = refresh_prices(all_tickers, lookback_years=3)
+        _log(f"      {ps['bars_added']} bars added, {len(ps['errors'])} errors")
+
+        _log("[3/7] Fetching fundamentals (first 50 tickers)…")
+        fs = refresh_fundamentals(tickers[:50])
+        _log(f"      {fs['updated']} tickers updated")
+
+        _log("[4/7] Fetching short interest…")
+        si = refresh_short_interest(tickers)
+        _log(f"      {si['updated']} tickers updated")
+
+        _log("[5/7] Fetching analyst estimates…")
+        es = refresh_estimates(tickers)
+        _log(f"      {es['updated']} tickers updated")
+
+        _log("[6/7] Fetching earnings calendar…")
+        cal = refresh_earnings_calendar(tickers)
+        _log(f"      {cal['updated']} tickers with dates")
+
+        _log("[7/7] Fetching transcripts…")
+        tr = refresh_transcripts(tickers[:20])
+        _log(f"      {tr.get('fetched', 0)} transcripts fetched")
+
+        _log("Data refresh complete — running scoring…")
+
+        from factors.composite import compute_all_factors, compute_composite
+        from data.universe import get_universe_df
+        from factors.regime_weights import get_vix_level
+
+        conn2 = get_conn()
+        universe_df = get_universe_df(conn2)
+        conn2.close()
+        universe_df = universe_df[universe_df["is_benchmark"] == 0].copy()
+
+        vix = get_vix_level()
+        factor_df = compute_all_factors(universe_df)
+        scored = compute_composite(factor_df, universe_df, vix=vix)
+
+        out = _output_dir()
+        scored.to_csv(out / "scored_universe_latest.csv")
+        _log(f"Scoring complete — {len(scored)} tickers scored, "
+             f"{(scored['signal']=='LONG').sum()} longs, "
+             f"{(scored['signal']=='SHORT').sum()} shorts")
+
+        _pipeline_status["last_result"] = "ok"
 
     except Exception as e:
         _pipeline_status["last_result"] = f"error: {e}"
