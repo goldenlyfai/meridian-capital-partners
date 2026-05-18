@@ -51,7 +51,37 @@ function DataStatusBanner() {
     }
   }
 
-  if (!status) return null;
+  // API not reachable yet — show setup instructions
+  if (!status) {
+    return (
+      <div style={{
+        background: "#6366f118", border: "1px solid #6366f1",
+        borderRadius: 10, padding: "12px 18px", marginBottom: 8,
+        display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
+      }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#a78bfa" }}>
+            ⚙ Backend not connected — add environment variables in Vercel to activate data
+          </div>
+          <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}>
+            Go to Vercel → dashboard project → Settings → Environment Variables → add ANTHROPIC_API_KEY, DATABASE_URL, ALPACA_API_KEY, ALPACA_SECRET_KEY, MERIDIAN_DB_PATH=/tmp/meridian.db → Redeploy
+          </div>
+          {msg && <div style={{ fontSize: 11, color: "#f43f5e", marginTop: 3 }}>{msg}</div>}
+        </div>
+        <button
+          onClick={runRefresh}
+          disabled={triggering}
+          style={{
+            background: "linear-gradient(135deg, #4f46e5, #6366f1)", border: "none",
+            borderRadius: 8, padding: "8px 16px", color: "#fff",
+            fontWeight: 600, cursor: "pointer", fontSize: 12, whiteSpace: "nowrap",
+          }}
+        >
+          {triggering ? "Trying…" : "Try Fetch Data"}
+        </button>
+      </div>
+    );
+  }
 
   const isEmpty = (status.universe_size ?? 0) === 0;
   const isRunning = status.pipeline_running;
