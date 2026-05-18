@@ -7,12 +7,11 @@
   "functions": {
     "api/index.py": {
       "runtime": "python3.12",
-      "maxDuration": 300,
-      "memory": 3008
+      "maxDuration": 60
     },
     "api/cron/refresh.py": {
       "runtime": "python3.12",
-      "maxDuration": 300
+      "maxDuration": 60
     }
   },
 
