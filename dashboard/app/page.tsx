@@ -20,10 +20,12 @@ const BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 async function adminPost(path: string) {
   const res = await fetch(`${BASE}${path}`, { method: "POST" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text().catch(() => "")}`);
   return res.json();
 }
 async function adminGet(path: string) {
   const res = await fetch(`${BASE}${path}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
@@ -44,8 +46,8 @@ function DataStatusBanner() {
     try {
       const r = await adminPost("/api/admin/run-data?no_filings=true&no_13f=true");
       setMsg(r.message ?? "Pipeline started.");
-    } catch {
-      setMsg("Could not reach backend.");
+    } catch (e: any) {
+      setMsg(`Error: ${e?.message ?? "Could not reach backend"}`);
     } finally {
       setTriggering(false);
     }
