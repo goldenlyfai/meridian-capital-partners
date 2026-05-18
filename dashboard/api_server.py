@@ -21,7 +21,20 @@ from paths import output_dir as _output_dir, cache_dir as _cache_dir  # noqa: E4
 cfg = yaml.safe_load((ROOT / "config.yaml").read_text())
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
-app = FastAPI(title="Meridian Capital Partners API", version="1.0.0")
+from contextlib import asynccontextmanager  # noqa: E402
+
+@asynccontextmanager
+async def lifespan(app):
+    """Initialise DB schema on every cold start."""
+    try:
+        from data.db import init_db
+        init_db()
+        logging.info("DB schema initialised")
+    except Exception as e:
+        logging.warning("init_db failed: %s", e)
+    yield
+
+app = FastAPI(title="Meridian Capital Partners API", version="1.0.0", lifespan=lifespan)
 
 # In production (Railway) allow the Vercel frontend origin.
 # ALLOWED_ORIGINS env var = comma-separated list, e.g. "https://meridian.vercel.app"
@@ -309,32 +322,44 @@ import threading as _threading
 _pipeline_status = {"running": False, "last_run": None, "last_result": None, "log": ""}
 
 
+def _stream_process(args: list, timeout: int) -> tuple[int, str]:
+    """Run subprocess and stream stdout+stderr into _pipeline_status['log']."""
+    import os as _os
+    proc = _subprocess.Popen(
+        args, stdout=_subprocess.PIPE, stderr=_subprocess.STDOUT,
+        text=True, cwd=str(ROOT),
+        env={**_os.environ, "PYTHONUNBUFFERED": "1"},
+    )
+    log = ""
+    try:
+        for line in proc.stdout:
+            log += line
+            _pipeline_status["log"] = log[-8000:]  # keep last 8KB
+        proc.wait(timeout=timeout)
+    except _subprocess.TimeoutExpired:
+        proc.kill()
+        return -1, log
+    return proc.returncode, log
+
+
 def _run_pipeline_bg(no_filings: bool, no_13f: bool):
     global _pipeline_status
     _pipeline_status["running"] = True
     _pipeline_status["log"] = ""
     try:
         import os as _os
-        # On Vercel, python3 is the executable; cwd must be /var/task (ROOT)
         python = _os.environ.get("PYTHON_EXEC", "python3")
         args = [python, str(ROOT / "run_data.py")]
         if no_filings:
             args.append("--no-filings")
         if no_13f:
             args.append("--no-13f")
-        result = _subprocess.run(
-            args, capture_output=True, text=True, timeout=3600,
-            cwd=str(ROOT),  # run from /var/task so relative imports work
-        )
-        log = result.stdout + result.stderr
-        _pipeline_status["log"] = log[-5000:]  # keep last 5000 chars
-        _pipeline_status["last_result"] = "ok" if result.returncode == 0 else "error"
+
+        rc, _ = _stream_process(args, timeout=3600)
+        _pipeline_status["last_result"] = "ok" if rc == 0 else f"error (exit {rc})"
 
         # Auto-run scoring after data
-        _subprocess.run(
-            [python, str(ROOT / "run_scoring.py")],
-            capture_output=True, timeout=600, cwd=str(ROOT),
-        )
+        _stream_process([python, str(ROOT / "run_scoring.py")], timeout=600)
 
     except Exception as e:
         _pipeline_status["last_result"] = f"error: {e}"
