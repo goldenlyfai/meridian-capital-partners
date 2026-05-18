@@ -10,8 +10,11 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).parent.parent
 _cfg = yaml.safe_load((ROOT / "config.yaml").read_text())
 cbcfg = _cfg["risk"]["circuit_breakers"]
-RISK_STATE = ROOT / "cache" / "risk_state.json"
-HALT_FILE = ROOT / "cache" / "HALT.lock"
+
+import sys as _sys; _sys.path.insert(0, str(ROOT))
+from paths import cache_dir as _cache_dir  # noqa: E402
+RISK_STATE = _cache_dir() / "risk_state.json"
+HALT_FILE = _cache_dir() / "HALT.lock"
 
 
 def load_risk_state() -> dict:

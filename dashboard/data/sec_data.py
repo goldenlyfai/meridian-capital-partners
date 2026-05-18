@@ -167,9 +167,10 @@ def _parse_form4_xml(xml_text: str, ticker: str) -> list[dict]:
 def refresh_sec_filings(tickers: list[str]) -> dict:
     conn = get_conn()
     summary = {"tickers_done": 0, "insider_txns": 0, "errors": []}
-    cache_dir = conn.execute("SELECT 1").connection  # just to get root
-    import pathlib
-    cache_path = pathlib.Path(__file__).parent.parent / "cache" / "sec_filings"
+    import sys as _sys, pathlib
+    _sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
+    from paths import cache_dir as _cache_dir
+    cache_path = _cache_dir() / "sec_filings"
     cache_path.mkdir(parents=True, exist_ok=True)
 
     for ticker in tickers:

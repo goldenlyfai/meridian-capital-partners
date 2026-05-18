@@ -64,8 +64,8 @@ def main():
     crowding_alerts = detect_crowding(factor_df)
 
     # Save results
-    output_dir = ROOT / "output"
-    output_dir.mkdir(exist_ok=True)
+    from paths import output_dir as _output_dir
+    output_dir = _output_dir()
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     latest_path = output_dir / "scored_universe_latest.csv"
     archive_path = output_dir / f"scored_universe_{ts}.csv"

@@ -13,7 +13,9 @@ _cfg = yaml.safe_load((ROOT / "config.yaml").read_text())
 AUM = _cfg["fund"]["aum_usd"]
 FUND = _cfg["fund"]
 
-LETTER_CACHE_DIR = ROOT / "cache" / "letters"
+import sys as _sys; _sys.path.insert(0, str(ROOT))
+from paths import cache_dir as _cache_dir  # noqa: E402
+LETTER_CACHE_DIR = _cache_dir() / "letters"
 
 JARVIS_SYSTEM = """You are JARVIS, the AI analyst for Meridian Capital Partners, a long/short equity hedge fund.
 You write in a sophisticated, institutional voice — precise, confident, and analytically grounded.

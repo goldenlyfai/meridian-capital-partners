@@ -9,7 +9,10 @@ import yaml
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).parent.parent
 _cfg = yaml.safe_load((ROOT / "config.yaml").read_text())
-RISK_STATE_PATH = ROOT / "cache" / "risk_state.json"
+
+import sys as _sys; _sys.path.insert(0, str(ROOT))
+from paths import cache_dir as _cache_dir  # noqa: E402
+RISK_STATE_PATH = _cache_dir() / "risk_state.json"
 
 
 def load() -> dict:

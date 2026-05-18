@@ -13,8 +13,9 @@ load_dotenv()
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
 
+from paths import log_file as _log_file, output_dir as _output_dir  # noqa: E402
 cfg = yaml.safe_load((ROOT / "config.yaml").read_text())
-log_path = ROOT / cfg["logging"]["log_file"]
+log_path = _log_file()
 log_path.parent.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(

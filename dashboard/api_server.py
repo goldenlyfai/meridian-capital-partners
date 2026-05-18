@@ -16,6 +16,8 @@ load_dotenv()
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
 
+from paths import output_dir as _output_dir, cache_dir as _cache_dir  # noqa: E402
+
 cfg = yaml.safe_load((ROOT / "config.yaml").read_text())
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
@@ -93,7 +95,7 @@ def get_beta():
 @app.get("/api/research/candidates")
 def get_candidates(limit: int = 20):
     import pandas as pd
-    scored_path = ROOT / "output" / "scored_universe_latest.csv"
+    scored_path = _output_dir() / "scored_universe_latest.csv"
     if not scored_path.exists():
         raise HTTPException(404, "No scored universe. Run run_scoring.py first.")
     scored = pd.read_csv(scored_path, index_col="ticker")
@@ -105,7 +107,7 @@ def get_candidates(limit: int = 20):
 @app.get("/api/research/crowding")
 def get_crowding():
     import pandas as pd
-    scored_path = ROOT / "output" / "scored_universe_latest.csv"
+    scored_path = _output_dir() / "scored_universe_latest.csv"
     if not scored_path.exists():
         return {"alerts": []}
     scored = pd.read_csv(scored_path, index_col="ticker")
@@ -312,20 +314,27 @@ def _run_pipeline_bg(no_filings: bool, no_13f: bool):
     _pipeline_status["running"] = True
     _pipeline_status["log"] = ""
     try:
-        args = ["python", "run_data.py"]
+        import os as _os
+        # On Vercel, python3 is the executable; cwd must be /var/task (ROOT)
+        python = _os.environ.get("PYTHON_EXEC", "python3")
+        args = [python, str(ROOT / "run_data.py")]
         if no_filings:
             args.append("--no-filings")
         if no_13f:
             args.append("--no-13f")
         result = _subprocess.run(
-            args, capture_output=True, text=True, timeout=3600
+            args, capture_output=True, text=True, timeout=3600,
+            cwd=str(ROOT),  # run from /var/task so relative imports work
         )
         log = result.stdout + result.stderr
         _pipeline_status["log"] = log[-5000:]  # keep last 5000 chars
         _pipeline_status["last_result"] = "ok" if result.returncode == 0 else "error"
 
         # Auto-run scoring after data
-        _subprocess.run(["python", "run_scoring.py"], capture_output=True, timeout=600)
+        _subprocess.run(
+            [python, str(ROOT / "run_scoring.py")],
+            capture_output=True, timeout=600, cwd=str(ROOT),
+        )
 
     except Exception as e:
         _pipeline_status["last_result"] = f"error: {e}"
