@@ -4,7 +4,10 @@ import argparse
 import logging
 import os
 import sys
+import warnings
 from pathlib import Path
+
+warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy")
 
 import yaml
 from dotenv import load_dotenv

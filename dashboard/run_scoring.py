@@ -3,12 +3,16 @@
 import argparse
 import logging
 import sys
+import warnings
 from pathlib import Path
 from datetime import datetime
 
 import yaml
 import pandas as pd
 from dotenv import load_dotenv
+
+# Suppress pandas DBAPI2 warning — our Connection wrapper works correctly
+warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy")
 
 load_dotenv()
 ROOT = Path(__file__).parent
