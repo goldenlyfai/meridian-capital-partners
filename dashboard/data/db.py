@@ -108,6 +108,33 @@ class _Cursor:
         return iter(self._cur.fetchall())
 
 
+class _AdaptedCursor:
+    """
+    Psycopg2 cursor wrapper that translates ? placeholders → %s.
+    Returned by Connection.cursor() so pandas.read_sql works transparently.
+    """
+    def __init__(self, cur):
+        self._cur = cur
+
+    def execute(self, sql: str, params=None):
+        self._cur.execute(_adapt(sql), params)
+        return self
+
+    def executemany(self, sql: str, seq):
+        self._cur.executemany(_adapt(sql), seq)
+
+    def fetchone(self):   return self._cur.fetchone()
+    def fetchall(self):   return self._cur.fetchall()
+    def fetchmany(self, size=None): return self._cur.fetchmany(size)
+    def __iter__(self):   return iter(self._cur)
+    def close(self):      self._cur.close()
+
+    @property
+    def description(self): return self._cur.description
+    @property
+    def rowcount(self):    return self._cur.rowcount
+
+
 class Connection:
     """Unified SQLite / Postgres connection with automatic SQL translation."""
 
@@ -159,7 +186,9 @@ class Connection:
     # ── pandas compatibility ──────────────────────────────────────────────────
 
     def cursor(self):
-        """Allow pandas.read_sql(sql, conn) to work directly."""
+        """Return an adapted cursor — translates ? placeholders for pandas.read_sql."""
+        if self._pg:
+            return _AdaptedCursor(self._conn.cursor())
         return self._conn.cursor()
 
     # ── transaction ──────────────────────────────────────────────────────────
