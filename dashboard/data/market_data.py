@@ -50,12 +50,28 @@ def _upsert_prices(conn, ticker: str, df: pd.DataFrame):
             float(row.get("Volume", 0) or 0),
             float(row.get("Close", 0) or 0),
         ))
-    conn.executemany(
-        """INSERT OR REPLACE INTO daily_prices
-           (ticker, date, open, high, low, close, volume, adj_close)
-           VALUES (?,?,?,?,?,?,?,?)""",
-        rows,
-    )
+    if getattr(conn, "_pg", False):
+        # Postgres: bulk insert via execute_values (single round-trip for all rows)
+        from psycopg2.extras import execute_values
+        cur = conn._conn.cursor()
+        execute_values(
+            cur,
+            """INSERT INTO daily_prices
+               (ticker, date, open, high, low, close, volume, adj_close)
+               VALUES %s
+               ON CONFLICT (ticker, date) DO UPDATE SET
+               open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low,
+               close=EXCLUDED.close, volume=EXCLUDED.volume, adj_close=EXCLUDED.adj_close""",
+            rows,
+            page_size=500,
+        )
+    else:
+        conn.executemany(
+            """INSERT OR REPLACE INTO daily_prices
+               (ticker, date, open, high, low, close, volume, adj_close)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            rows,
+        )
     return len(rows)
 
 

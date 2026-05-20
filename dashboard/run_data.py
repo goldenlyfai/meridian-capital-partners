@@ -34,6 +34,8 @@ def main():
     parser.add_argument("--no-filings", action="store_true", help="Skip SEC filings (faster daily run)")
     parser.add_argument("--no-13f", action="store_true", help="Skip 13-F institutional holdings")
     parser.add_argument("--ticker", help="Single ticker mode")
+    parser.add_argument("--lookback-years", type=int, default=cfg["market_data"]["lookback_years"],
+                        help="Price history lookback in years (default 3; use 1 for faster first run)")
     args = parser.parse_args()
 
     from data.db import init_db
@@ -73,7 +75,7 @@ def main():
     logger.info("[2/8] Fetching daily prices…")
     price_summary = refresh_prices(
         all_tickers,
-        lookback_years=cfg["market_data"]["lookback_years"],
+        lookback_years=args.lookback_years,
     )
     logger.info(
         "Prices: %d tickers updated, %d bars added, %d errors",
