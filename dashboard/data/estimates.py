@@ -13,39 +13,43 @@ BATCH_SIZE = 25
 
 
 def refresh_estimates(tickers: list[str]) -> dict:
-    conn = get_conn()
     today = datetime.utcnow().strftime("%Y-%m-%d")
     summary = {"updated": 0, "errors": []}
 
     for i in range(0, len(tickers), BATCH_SIZE):
         batch = tickers[i : i + BATCH_SIZE]
-        for ticker in batch:
-            time.sleep(0.3)
-            try:
-                info = yf.Ticker(ticker).info or {}
-                forward_eps = info.get("forwardEps")
-                price_target = info.get("targetMeanPrice")
-                num_analysts = info.get("numberOfAnalystOpinions")
+        conn = get_conn()
+        try:
+            for ticker in batch:
+                time.sleep(0.3)
+                try:
+                    info = yf.Ticker(ticker).info or {}
+                    forward_eps = info.get("forwardEps")
+                    price_target = info.get("targetMeanPrice")
+                    num_analysts = info.get("numberOfAnalystOpinions")
 
-                if forward_eps is None and price_target is None:
-                    continue
+                    if forward_eps is None and price_target is None:
+                        continue
 
-                conn.execute(
-                    """INSERT OR REPLACE INTO analyst_estimates
-                       (ticker, date, forward_eps, price_target, num_analysts, fetched_at)
-                       VALUES (?,?,?,?,?,?)""",
-                    (ticker, today, forward_eps, price_target, num_analysts,
-                     datetime.utcnow().isoformat()),
-                )
-                summary["updated"] += 1
-            except Exception as e:
-                logger.debug("Estimates %s: %s", ticker, e)
-                summary["errors"].append(f"{ticker}: {e}")
+                    conn.execute(
+                        """INSERT OR REPLACE INTO analyst_estimates
+                           (ticker, date, forward_eps, price_target, num_analysts, fetched_at)
+                           VALUES (?,?,?,?,?,?)""",
+                        (ticker, today, forward_eps, price_target, num_analysts,
+                         datetime.utcnow().isoformat()),
+                    )
+                    summary["updated"] += 1
+                except Exception as e:
+                    logger.debug("Estimates %s: %s", ticker, e)
+                    summary["errors"].append(f"{ticker}: {e}")
 
-        conn.commit()
+            conn.commit()
+        except Exception as e:
+            logger.warning("Estimates batch %d commit failed: %s", i // BATCH_SIZE, e)
+        finally:
+            conn.close()
         time.sleep(1.0)
 
-    conn.close()
     return summary
 
 

@@ -119,55 +119,62 @@ def _fetch_info_with_retry(ticker: str, retries: int = 3) -> dict:
     return {}
 
 
+_FUND_BATCH = 25  # reconnect every N tickers to avoid Neon idle-connection drops
+
+
 def refresh_fundamentals(tickers: list[str]) -> dict:
     import time
-    conn = get_conn()
     summary = {"updated": 0, "errors": []}
 
-    for ticker in tickers:
-        time.sleep(0.5)  # 2 req/sec — stay well under yfinance rate limit
+    for batch_start in range(0, len(tickers), _FUND_BATCH):
+        batch = tickers[batch_start : batch_start + _FUND_BATCH]
+        conn = get_conn()
         try:
-            yt = yf.Ticker(ticker)
-            info = _fetch_info_with_retry(ticker)
-            q_income = yt.quarterly_income_stmt
-            q_balance = yt.quarterly_balance_sheet
-            q_cashflow = yt.quarterly_cashflow
-            a_income = yt.income_stmt
-            a_balance = yt.balance_sheet
-            a_cashflow = yt.cashflow
+            for ticker in batch:
+                time.sleep(0.5)
+                try:
+                    yt = yf.Ticker(ticker)
+                    info = _fetch_info_with_retry(ticker)
+                    q_income = yt.quarterly_income_stmt
+                    q_balance = yt.quarterly_balance_sheet
+                    q_cashflow = yt.quarterly_cashflow
+                    a_income = yt.income_stmt
+                    a_balance = yt.balance_sheet
+                    a_cashflow = yt.cashflow
 
-            periods_done = []
+                    periods_done = []
 
-            for df_set, ptype in [
-                ((q_income, q_balance, q_cashflow), "quarterly"),
-                ((a_income, a_balance, a_cashflow), "annual"),
-            ]:
-                inc, bal, cf = df_set
-                if inc is None or inc.empty:
-                    continue
-                for col in inc.columns[:8]:
-                    period_str = str(col)[:10]
-                    try:
-                        inc_p = inc[[col]] if col in inc.columns else pd.DataFrame()
-                        bal_p = bal[[col]] if (bal is not None and col in bal.columns) else pd.DataFrame()
-                        cf_p = cf[[col]] if (cf is not None and col in cf.columns) else pd.DataFrame()
-                        row = _calc_ratios(info, inc_p, bal_p, cf_p, period_str, ptype)
-                        row["ticker"] = ticker
-                        _upsert_fundamentals(conn, row)
-                        periods_done.append(period_str)
-                    except Exception as e:
-                        logger.debug("Ratio calc %s %s: %s", ticker, col, e)
+                    for df_set, ptype in [
+                        ((q_income, q_balance, q_cashflow), "quarterly"),
+                        ((a_income, a_balance, a_cashflow), "annual"),
+                    ]:
+                        inc, bal, cf = df_set
+                        if inc is None or inc.empty:
+                            continue
+                        for col in inc.columns[:8]:
+                            period_str = str(col)[:10]
+                            try:
+                                inc_p = inc[[col]] if col in inc.columns else pd.DataFrame()
+                                bal_p = bal[[col]] if (bal is not None and col in bal.columns) else pd.DataFrame()
+                                cf_p = cf[[col]] if (cf is not None and col in cf.columns) else pd.DataFrame()
+                                row = _calc_ratios(info, inc_p, bal_p, cf_p, period_str, ptype)
+                                row["ticker"] = ticker
+                                _upsert_fundamentals(conn, row)
+                                periods_done.append(period_str)
+                            except Exception as e:
+                                logger.debug("Ratio calc %s %s: %s", ticker, col, e)
 
-            if periods_done:
-                summary["updated"] += 1
-                conn.commit()
-                logger.debug("Fundamentals: %s — %d periods", ticker, len(periods_done))
+                    if periods_done:
+                        summary["updated"] += 1
+                        conn.commit()
+                        logger.debug("Fundamentals: %s — %d periods", ticker, len(periods_done))
 
-        except Exception as e:
-            logger.warning("Fundamentals error %s: %s", ticker, e)
-            summary["errors"].append(f"{ticker}: {e}")
+                except Exception as e:
+                    logger.warning("Fundamentals error %s: %s", ticker, e)
+                    summary["errors"].append(f"{ticker}: {e}")
+        finally:
+            conn.close()
 
-    conn.close()
     return summary
 
 

@@ -13,61 +13,63 @@ BATCH_SIZE = 25
 
 
 def refresh_earnings_calendar(tickers: list[str]) -> dict:
-    conn = get_conn()
     summary = {"updated": 0, "errors": []}
     now_iso = datetime.utcnow().isoformat()
 
     for i in range(0, len(tickers), BATCH_SIZE):
         batch = tickers[i : i + BATCH_SIZE]
-        for ticker in batch:
-            try:
-                yt = yf.Ticker(ticker)
-                earnings_dates = []
-
-                # Try get_earnings_dates() first (newer yfinance, returns DataFrame)
+        conn = get_conn()
+        try:
+            for ticker in batch:
                 try:
-                    df = yt.get_earnings_dates(limit=4)
-                    if df is not None and not df.empty:
-                        from datetime import datetime as dt
-                        today_str = dt.utcnow().strftime("%Y-%m-%d")
-                        future = [str(d)[:10] for d in df.index if str(d)[:10] >= today_str]
-                        earnings_dates = future
-                except Exception:
-                    pass
+                    yt = yf.Ticker(ticker)
+                    earnings_dates = []
 
-                # Fallback: .calendar dict format
-                if not earnings_dates:
-                    cal = yt.calendar
-                    if isinstance(cal, dict):
-                        raw = cal.get("Earnings Date", cal.get("earningsDate", []))
-                        if isinstance(raw, list):
-                            earnings_dates = [str(d)[:10] for d in raw if d]
-                        elif raw:
-                            earnings_dates = [str(raw)[:10]]
-                    elif hasattr(cal, "empty") and not cal.empty and "Earnings Date" in cal.index:
-                        val = cal.loc["Earnings Date"]
-                        if hasattr(val, "__iter__") and not isinstance(val, str):
-                            earnings_dates = [str(v)[:10] for v in val if v]
-                        else:
-                            earnings_dates = [str(val)[:10]]
+                    try:
+                        df = yt.get_earnings_dates(limit=4)
+                        if df is not None and not df.empty:
+                            from datetime import datetime as dt
+                            today_str = dt.utcnow().strftime("%Y-%m-%d")
+                            future = [str(d)[:10] for d in df.index if str(d)[:10] >= today_str]
+                            earnings_dates = future
+                    except Exception:
+                        pass
 
-                for d in earnings_dates:
-                    conn.execute(
-                        """INSERT OR REPLACE INTO earnings_calendar
-                           (ticker, earnings_date, fetched_at) VALUES (?,?,?)""",
-                        (ticker, d, now_iso),
-                    )
-                if earnings_dates:
-                    summary["updated"] += 1
+                    if not earnings_dates:
+                        cal = yt.calendar
+                        if isinstance(cal, dict):
+                            raw = cal.get("Earnings Date", cal.get("earningsDate", []))
+                            if isinstance(raw, list):
+                                earnings_dates = [str(d)[:10] for d in raw if d]
+                            elif raw:
+                                earnings_dates = [str(raw)[:10]]
+                        elif hasattr(cal, "empty") and not cal.empty and "Earnings Date" in cal.index:
+                            val = cal.loc["Earnings Date"]
+                            if hasattr(val, "__iter__") and not isinstance(val, str):
+                                earnings_dates = [str(v)[:10] for v in val if v]
+                            else:
+                                earnings_dates = [str(val)[:10]]
 
-            except Exception as e:
-                logger.debug("Earnings calendar %s: %s", ticker, e)
-                summary["errors"].append(f"{ticker}: {e}")
+                    for d in earnings_dates:
+                        conn.execute(
+                            """INSERT OR REPLACE INTO earnings_calendar
+                               (ticker, earnings_date, fetched_at) VALUES (?,?,?)""",
+                            (ticker, d, now_iso),
+                        )
+                    if earnings_dates:
+                        summary["updated"] += 1
 
-        conn.commit()
+                except Exception as e:
+                    logger.debug("Earnings calendar %s: %s", ticker, e)
+                    summary["errors"].append(f"{ticker}: {e}")
+
+            conn.commit()
+        except Exception as e:
+            logger.warning("Earnings calendar batch %d commit failed: %s", i // BATCH_SIZE, e)
+        finally:
+            conn.close()
         time.sleep(1.0)
 
-    conn.close()
     return summary
 
 
