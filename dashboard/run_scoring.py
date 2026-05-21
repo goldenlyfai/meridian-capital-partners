@@ -67,7 +67,7 @@ def main():
     # Crowding detection
     crowding_alerts = detect_crowding(factor_df)
 
-    # Save results
+    # Save results to CSV (local archive)
     from paths import output_dir as _output_dir
     output_dir = _output_dir()
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -76,6 +76,11 @@ def main():
     scored.to_csv(latest_path)
     scored.to_csv(archive_path)
     logger.info("Scores saved: %s", latest_path)
+
+    # Also persist to DB so Vercel can read without a local CSV
+    from data.scoring_store import save_scores
+    n_saved = save_scores(scored)
+    logger.info("Scores persisted to DB: %d tickers", n_saved)
 
     # Print summary
     longs = scored[scored["signal"] == "LONG"].head(5)

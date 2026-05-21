@@ -41,6 +41,7 @@ _TABLE_PK: dict[str, list[str]] = {
     "position_approvals":     ["ticker"],
     "analysis_results":       ["analyzer", "ticker", "artifact_id"],
     "short_availability":     ["ticker"],
+    "scored_universe":        ["ticker"],
     "veto_log":               [],   # append-only
     "fills":                  [],   # append-only
     "portfolio_history":      [],   # append-only
@@ -365,6 +366,24 @@ def init_db():
         status TEXT,
         reviewed_at TEXT,
         reviewer TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS scored_universe (
+        ticker TEXT PRIMARY KEY,
+        company_name TEXT,
+        sector TEXT,
+        sub_industry TEXT,
+        composite REAL,
+        momentum REAL,
+        value REAL,
+        quality REAL,
+        growth REAL,
+        estimate_revisions REAL,
+        short_interest REAL,
+        insider_activity REAL,
+        institutional_flow REAL,
+        signal TEXT,
+        scored_at TEXT
     );
     """)
     conn.commit()

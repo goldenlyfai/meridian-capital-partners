@@ -105,13 +105,24 @@ def get_beta():
 
 # ─── RESEARCH / SCORING ─────────────────────────────────────────────────────
 
+def _load_scored() -> "pd.DataFrame":
+    """Load scored universe — DB first, CSV fallback."""
+    import pandas as pd
+    from data.scoring_store import load_scores
+    df = load_scores()
+    if not df.empty:
+        return df
+    scored_path = _output_dir() / "scored_universe_latest.csv"
+    if scored_path.exists():
+        return pd.read_csv(scored_path, index_col="ticker")
+    return pd.DataFrame()
+
+
 @app.get("/api/research/candidates")
 def get_candidates(limit: int = 20):
-    import pandas as pd
-    scored_path = _output_dir() / "scored_universe_latest.csv"
-    if not scored_path.exists():
+    scored = _load_scored()
+    if scored.empty:
         raise HTTPException(404, "No scored universe. Run run_scoring.py first.")
-    scored = pd.read_csv(scored_path, index_col="ticker")
     longs = scored[scored["signal"] == "LONG"].head(limit).reset_index().to_dict("records")
     shorts = scored[scored["signal"] == "SHORT"].tail(limit).reset_index().to_dict("records")
     return {"longs": longs, "shorts": shorts}
@@ -119,11 +130,9 @@ def get_candidates(limit: int = 20):
 
 @app.get("/api/research/crowding")
 def get_crowding():
-    import pandas as pd
-    scored_path = _output_dir() / "scored_universe_latest.csv"
-    if not scored_path.exists():
+    scored = _load_scored()
+    if scored.empty:
         return {"alerts": []}
-    scored = pd.read_csv(scored_path, index_col="ticker")
     from factors.crowding import detect_crowding
     alerts = detect_crowding(scored)
     return {"alerts": alerts}
@@ -393,6 +402,10 @@ def _run_pipeline_bg(no_filings: bool, no_13f: bool):
 
         out = _output_dir()
         scored.to_csv(out / "scored_universe_latest.csv")
+
+        from data.scoring_store import save_scores
+        save_scores(scored)
+
         _log(f"Scoring complete — {len(scored)} tickers scored, "
              f"{(scored['signal']=='LONG').sum()} longs, "
              f"{(scored['signal']=='SHORT').sum()} shorts")
