@@ -301,13 +301,16 @@ def get_universe_stats():
     from data.db import get_conn
     from data.earnings_calendar import get_upcoming_earnings
     from data.sec_data import detect_cluster_buying
+    from datetime import datetime, timedelta
+    cutoff_30d = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
     conn = get_conn()
     n_universe = conn.execute("SELECT COUNT(*) FROM universe WHERE is_benchmark=0").fetchone()[0]
     upcoming = get_upcoming_earnings(conn, days=7)
     ceo_buys = conn.execute(
         """SELECT COUNT(*) FROM insider_transactions
            WHERE is_ceo_cfo=1 AND transaction_code='P'
-           AND date >= date('now', '-30 days')"""
+           AND date >= ?""",
+        (cutoff_30d,),
     ).fetchone()[0]
     cluster_count = 0
     tickers = [r[0] for r in conn.execute("SELECT ticker FROM universe WHERE is_benchmark=0 LIMIT 50").fetchall()]
