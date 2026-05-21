@@ -7,6 +7,16 @@ from data.fundamentals import get_fundamentals
 from factors.utils import sector_percentile_rank, equal_weight_subscore, winsorize
 
 
+def _sf(val) -> float:
+    """Safe float — converts None (Postgres NULL) or non-numeric to np.nan."""
+    if val is None:
+        return np.nan
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return np.nan
+
+
 def _piotroski(df: pd.DataFrame) -> int:
     """Compute Piotroski F-Score (0-9) from quarterly fundamentals."""
     if df.empty or len(df) < 2:
@@ -103,8 +113,8 @@ def compute_quality(universe_df: pd.DataFrame) -> pd.Series:
         # 8 sub-factors
         roe_vals = fund["roe"].dropna().values
         roe_std = float(np.std(roe_vals)) if len(roe_vals) > 1 else np.nan
-        gm_trend = (float(fund["gross_margin"].iloc[0]) - float(fund["gross_margin"].iloc[3])) \
-                   if len(fund) >= 4 and not np.isnan(float(fund["gross_margin"].iloc[3] or 0)) else np.nan
+        gm_trend = (_sf(fund["gross_margin"].iloc[0]) - _sf(fund["gross_margin"].iloc[3])) \
+                   if len(fund) >= 4 else np.nan
 
         records[ticker] = {
             "roe_stability": -roe_std if not np.isnan(roe_std) else np.nan,
