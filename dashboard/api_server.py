@@ -296,6 +296,59 @@ def get_weekly_commentary():
 
 # ─── UNIVERSE ────────────────────────────────────────────────────────────────
 
+@app.post("/api/universe/add-ticker")
+def add_custom_ticker(ticker: str, company_name: str = "", sector: str = ""):
+    """Add a custom ticker to the universe (persists across S&P 500 refreshes)."""
+    from datetime import datetime
+    ticker = ticker.upper().strip()
+    if not ticker:
+        raise HTTPException(400, "ticker is required")
+
+    # Try to fetch company info from yfinance if not provided
+    if not company_name or not sector:
+        try:
+            import yfinance as yf
+            info = yf.Ticker(ticker).info or {}
+            company_name = company_name or info.get("longName") or info.get("shortName") or ticker
+            sector = sector or info.get("sector") or "Unknown"
+        except Exception:
+            company_name = company_name or ticker
+            sector = sector or "Unknown"
+
+    from data.db import get_conn
+    conn = get_conn()
+    existing = conn.execute("SELECT ticker, is_custom FROM universe WHERE ticker=?", (ticker,)).fetchone()
+    if existing:
+        conn.close()
+        return {"status": "already_exists", "ticker": ticker, "in_sp500": existing[1] == 0}
+
+    conn.execute(
+        """INSERT OR REPLACE INTO universe
+           (ticker, company_name, sector, sub_industry, is_benchmark, is_custom, updated_at)
+           VALUES (?,?,?,?,0,1,?)""",
+        (ticker, company_name, sector, sector, datetime.utcnow().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "added", "ticker": ticker, "company_name": company_name, "sector": sector}
+
+
+@app.get("/api/universe/search")
+def search_universe(q: str = ""):
+    """Search universe tickers by ticker symbol or company name."""
+    from data.db import get_conn
+    conn = get_conn()
+    like = f"%{q.upper()}%"
+    rows = conn.execute(
+        """SELECT ticker, company_name, sector, is_custom FROM universe
+           WHERE is_benchmark=0 AND (ticker LIKE ? OR UPPER(company_name) LIKE ?)
+           ORDER BY is_custom DESC, ticker LIMIT 20""",
+        (like, like),
+    ).fetchall()
+    conn.close()
+    return {"results": [{"ticker": r[0], "company_name": r[1], "sector": r[2], "is_custom": bool(r[3])} for r in rows]}
+
+
 @app.get("/api/universe/stats")
 def get_universe_stats():
     from data.db import get_conn

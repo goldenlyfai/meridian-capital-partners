@@ -225,8 +225,11 @@ def init_db():
         sector TEXT,
         sub_industry TEXT,
         is_benchmark INTEGER DEFAULT 0,
+        is_custom INTEGER DEFAULT 0,
         updated_at TEXT
     );
+
+    ALTER TABLE universe ADD COLUMN is_custom INTEGER DEFAULT 0;
 
     CREATE TABLE IF NOT EXISTS daily_prices (
         ticker TEXT NOT NULL,

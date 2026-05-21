@@ -63,14 +63,26 @@ export default function PerformancePage() {
   useEffect(() => {
     setLoading(true);
     Promise.all([
-      api.performance.attribution(90).then(setAttribution),
-      api.performance.equityCurve().then((d) => setEquityCurve(d.data ?? d ?? [])),
+      api.performance.attribution(90).then((d) => setAttribution(d.attribution ?? d)),
+      api.performance.equityCurve().then((d) => {
+        // API returns {fund: [{date, value}], spy: [{date, value}]} — merge by date
+        const fundArr: any[] = d.fund ?? [];
+        const spyArr: any[] = d.spy ?? [];
+        if (fundArr.length === 0 && spyArr.length === 0) { setEquityCurve([]); return; }
+        const byDate: Record<string, any> = {};
+        fundArr.forEach((p: any) => { byDate[p.date] = { date: p.date, fund: p.value }; });
+        spyArr.forEach((p: any) => {
+          if (byDate[p.date]) byDate[p.date].spy = p.value;
+          else byDate[p.date] = { date: p.date, spy: p.value };
+        });
+        setEquityCurve(Object.values(byDate).sort((a, b) => String(a.date).localeCompare(String(b.date))));
+      }),
       api.letter.weeklyCommentary().then(setCommentary).catch(() => {}),
     ]).catch(() => setError(true)).finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div style={{ color: "var(--muted)", padding: 48, fontSize: 14 }}>Loading performance data…</div>;
-  if (error || !attribution) return <div style={{ color: "var(--muted)", padding: 48, fontSize: 14 }}>No data available — run backend layers first.</div>;
+  if (error) return <div style={{ color: "var(--muted)", padding: 48, fontSize: 14 }}>No data available — run backend layers first.</div>;
 
   const summary = attribution.summary ?? {};
   const sectorAlpha: any[] = attribution.sector_alpha ?? [];

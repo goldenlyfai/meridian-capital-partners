@@ -54,6 +54,13 @@ export const api = {
   },
   universe: {
     stats: () => get<any>("/api/universe/stats"),
+    addTicker: (ticker: string, companyName?: string, sector?: string) => {
+      const params = new URLSearchParams({ ticker });
+      if (companyName) params.set("company_name", companyName);
+      if (sector) params.set("sector", sector);
+      return post<any>(`/api/universe/add-ticker?${params}`, {});
+    },
+    search: (q: string) => get<any>(`/api/universe/search?q=${encodeURIComponent(q)}`),
   },
   jarvis: {
     chat: (message: string, history: any[] = []) =>

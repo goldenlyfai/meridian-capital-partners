@@ -118,6 +118,61 @@ function DataStatusBanner() {
   );
 }
 
+function WatchTickerWidget({ onAdded }: { onAdded: () => void }) {
+  const [ticker, setTicker] = useState("");
+  const [status, setStatus] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function handleAdd() {
+    const t = ticker.trim().toUpperCase();
+    if (!t) return;
+    setBusy(true);
+    setStatus(null);
+    try {
+      const res = await api.universe.addTicker(t);
+      if (res.status === "already_exists") {
+        setStatus({ msg: `${t} is already in the universe${res.in_sp500 ? " (S&P 500)" : " (custom)"}`, ok: true });
+      } else {
+        setStatus({ msg: `✓ ${t} (${res.company_name}) added — run data refresh to pull prices`, ok: true });
+        setTicker("");
+        onAdded();
+      }
+    } catch (e: any) {
+      setStatus({ msg: `Failed: ${e?.message ?? "unknown error"}`, ok: false });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card" style={{ padding: "14px 16px" }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", letterSpacing: "0.08em", marginBottom: 10 }}>WATCH TICKER</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          value={ticker}
+          onChange={(e) => setTicker(e.target.value.toUpperCase())}
+          onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+          placeholder="e.g. NVDA, PLTR…"
+          maxLength={10}
+          style={{ flex: 1, background: "#0b0e17", border: "1px solid #1e2a45", borderRadius: 8, padding: "8px 12px", color: "#e2e8f0", fontSize: 13, outline: "none", fontFamily: "monospace", textTransform: "uppercase" }}
+        />
+        <button
+          onClick={handleAdd}
+          disabled={busy || !ticker.trim()}
+          style={{ background: busy || !ticker.trim() ? "#1e2a45" : "linear-gradient(135deg,#4f46e5,#6366f1)", border: "none", borderRadius: 8, padding: "8px 16px", color: busy || !ticker.trim() ? "#64748b" : "#fff", fontWeight: 700, cursor: busy || !ticker.trim() ? "not-allowed" : "pointer", fontSize: 12, whiteSpace: "nowrap" }}>
+          {busy ? "Adding…" : "Add"}
+        </button>
+      </div>
+      {status && (
+        <div style={{ marginTop: 8, fontSize: 11, color: status.ok ? "#10b981" : "#f43f5e" }}>{status.msg}</div>
+      )}
+      <div style={{ marginTop: 6, fontSize: 10, color: "#475569" }}>
+        Add any ticker not in S&P 500 — it will be scored and tracked going forward.
+      </div>
+    </div>
+  );
+}
+
 export default function PortfolioPage() {
   const [stats, setStats] = useState<any>(null);
   const [positions, setPositions] = useState<any>(null);
@@ -189,6 +244,8 @@ export default function PortfolioPage() {
           <MetricCard label="Regime" value={vixData?.regime?.replace("_", " ")?.toUpperCase() ?? "—"} />
           <MetricCard label="Unrlzd P&L" value={summary.total_unrealized_pnl != null ? `$${(summary.total_unrealized_pnl/1000).toFixed(0)}K` : "—"} color={summary.total_unrealized_pnl >= 0 ? "#10b981" : "#f43f5e"} />
         </div>
+
+        <WatchTickerWidget onAdded={() => api.universe.stats().then(setStats).catch(() => {})} />
 
         <div className="card" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#6366f1", letterSpacing: "0.1em" }}>ASK JARVIS</div>

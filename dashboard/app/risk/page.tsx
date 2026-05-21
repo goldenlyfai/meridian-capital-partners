@@ -54,26 +54,26 @@ export default function RiskPage() {
     setLoading(true);
     Promise.all([
       api.risk.state().then(setRiskState),
-      api.risk.stressTests().then((d) => setStressTests(d.scenarios ?? d ?? [])),
+      api.risk.stressTests().then((d) => setStressTests(d.results ?? d.scenarios ?? (Array.isArray(d) ? d : []))),
     ]).catch(() => setError(true)).finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div style={{ color: "var(--muted)", padding: 48, fontSize: 14 }}>Loading risk data…</div>;
   if (error || !riskState) return <div style={{ color: "var(--muted)", padding: 48, fontSize: 14 }}>No data available — run backend layers first.</div>;
 
-  const cb = riskState.circuit_breakers ?? {};
-  const tail = riskState.tail_risk ?? {};
-  const decomp = riskState.variance_decomposition ?? {};
-  const mctr: any[] = riskState.mctr ?? [];
+  // API returns flat object — map directly
+  const decomp = riskState.risk_decomposition ?? {};
+  const rawMctr = riskState.mctr ?? {};
+  const mctr: any[] = Array.isArray(rawMctr) ? rawMctr : Object.entries(rawMctr).map(([ticker, v]: any) => ({ ticker, ...v }));
   const factorExp: Record<string, number> = riskState.factor_exposures ?? {};
-  const alerts: any[] = riskState.alert_log ?? riskState.alerts ?? [];
-  const haltLocked: boolean = riskState.halt_locked ?? false;
+  const alerts: any[] = riskState.alerts ?? [];
+  const haltLocked: boolean = riskState.halt_active ?? false;
   const effectiveBets: number = riskState.effective_bets ?? 0;
-  const activeAlerts: number = riskState.active_alerts ?? alerts.filter((a: any) => !a.resolved).length;
+  const activeAlerts: number = alerts.filter((a: any) => !a.resolved).length;
 
-  const dailyPnl = cb.daily_pnl ?? 0;
-  const weeklyPnl = cb.weekly_pnl ?? 0;
-  const drawdown = cb.drawdown ?? 0;
+  const dailyPnl = riskState.daily_pnl ?? 0;
+  const weeklyPnl = riskState.weekly_pnl ?? 0;
+  const drawdown = riskState.drawdown ?? 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -95,8 +95,8 @@ export default function RiskPage() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-        <MetricCard label="VIX" value={tail.vix?.toFixed(1) ?? "—"} color={tail.vix > 25 ? "var(--short)" : "var(--long)"} />
-        <MetricCard label="Credit Spread Z" value={tail.credit_spread_z?.toFixed(2) ?? "—"} color={Math.abs(tail.credit_spread_z ?? 0) > 2 ? "var(--short)" : "var(--text)"} />
+        <MetricCard label="VIX" value={riskState.vix?.toFixed(1) ?? "—"} color={(riskState.vix ?? 0) > 25 ? "var(--short)" : "var(--long)"} />
+        <MetricCard label="Credit Spread Z" value={riskState.credit_spread_zscore?.toFixed(2) ?? "—"} color={Math.abs(riskState.credit_spread_zscore ?? 0) > 2 ? "var(--short)" : "var(--text)"} />
         <MetricCard label="Active Alerts" value={activeAlerts} color={activeAlerts > 0 ? "var(--short)" : "var(--long)"} />
         <MetricCard label="Effective Bets" value={effectiveBets.toFixed(1)} sub="Bai-Perron" />
       </div>

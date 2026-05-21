@@ -75,7 +75,7 @@ def refresh_universe(refresh_days: int = 7) -> int:
         df = _scrape_sp500()
         now = datetime.utcnow().isoformat()
 
-        conn.execute("DELETE FROM universe WHERE is_benchmark=0")
+        conn.execute("DELETE FROM universe WHERE is_benchmark=0 AND (is_custom=0 OR is_custom IS NULL)")
         for _, row in df.iterrows():
             conn.execute(
                 """INSERT OR REPLACE INTO universe
